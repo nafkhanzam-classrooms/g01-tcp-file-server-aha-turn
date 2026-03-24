@@ -2,10 +2,10 @@
 # Network Programming - Assignment G01
 
 ## Anggota Kelompok
-| Nama           | NRP        | Kelas     |
-| ---            | ---        | ----------|
-|                |            |           |
-|                |            |           |
+| Nama                | NRP        | Kelas     |
+| ---                 | ---        | ----------|
+| Bagus Cahya Saputra | 5025241067 |    D      |
+| Rafi Aqila Maulana  | 5025241165 |    D      |
 
 ## Link Youtube (Unlisted)
 Link ditaruh di bawah ini
