@@ -200,5 +200,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-#tes push select dari repo lama
