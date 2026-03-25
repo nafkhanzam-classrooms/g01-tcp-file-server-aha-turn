@@ -28,7 +28,7 @@ def recv_msg(sock):
     return buf
 
 def handle_client(conn, addr):
-    """Handle one client — synchronous, blocks entire server."""
+    """Handle one client — sync, blocks entire server."""
     print(f"[SYNC] Connected: {addr}")
     send_msg(conn, b"Welcome to the TCP File Server (sync mode)!")
 
