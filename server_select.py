@@ -10,16 +10,13 @@ HOST = '127.0.0.1'
 PORT = 5000
 
 upload_state = {}
-
 recv_buffers = {}
-
 clients = {}
 
 def send_msg(sock, data):
     """Method 5: Length Prefix / Header framing."""
     header = struct.pack(">I", len(data))
     sock.sendall(header + data)
-
 
 def broadcast(message, exclude=None):
     """Send a message to all connected clients."""
@@ -30,7 +27,6 @@ def broadcast(message, exclude=None):
             send_msg(sock, message)
         except Exception:
             pass
-
 
 def try_recv_msg(sock):
     """
@@ -59,7 +55,6 @@ def try_recv_msg(sock):
     message = buf[4:4 + length]
     recv_buffers[sock] = buf[4 + length:]
     return message
-
 
 def handle_command(sock, addr, message):
     """Process a command string from a client."""
@@ -97,7 +92,6 @@ def handle_command(sock, addr, message):
         broadcast_msg = f"MSG {addr[0]}:{addr[1]}: {text}".encode()
         broadcast(broadcast_msg)
 
-
 def handle_upload_data(sock, addr):
     """
     Receive raw chunked-block data for an in-progress upload.
@@ -132,9 +126,7 @@ def handle_upload_data(sock, addr):
         state["file"].write(data)
         buf = buf[4 + length:]
         state["buf"] = buf
-
     return True
-
 
 def remove_client(sock, input_sockets):
     addr = clients.get(sock, "unknown")
@@ -149,7 +141,6 @@ def remove_client(sock, input_sockets):
         del clients[sock]
     sock.close()
     input_sockets.remove(sock)
-
 
 def main():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
