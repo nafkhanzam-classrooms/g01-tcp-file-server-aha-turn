@@ -307,6 +307,277 @@ Ini yang bikin:
 - Lebih efisien
 ---
 
+## server_poll.py (I/O Multiplexing dengan poll)
+
+Server ini menggunakan *poll()* sebagai alternatif dari select(). Keduanya adalah mekanisme I/O multiplexing, namun poll() tidak memiliki batasan jumlah file descriptor seperti select().
+
+---
+
+### Inisialisasi
+python
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server.bind((HOST, PORT))
+server.listen(5)
+server.setblocking(False)
+
+- Socket dibuat dalam mode *non-blocking*
+- SO_REUSEADDR memungkinkan port langsung dipakai ulang setelah server restart
+
+python
+poll_obj = select.poll()
+poll_obj.register(server.fileno(), select.POLLIN)
+
+- Objek poll dibuat dan server socket didaftarkan untuk dipantau event POLLIN (ada data masuk)
+
+---
+
+### Struktur Data
+python
+fd_map: dict[int, socket.socket] = {server.fileno(): server}
+addr_map: dict[int, tuple] = {}
+
+- fd_map → memetakan file descriptor (fd) ke objek socket
+- addr_map → memetakan fd ke alamat client (ip, port)
+
+Berbeda dari select, poll bekerja dengan *file descriptor integer*, bukan objek socket secara langsung. Maka diperlukan dua mapping ini untuk mengelola client.
+
+---
+
+### Poll Loop (Inti Program)
+python
+events = poll_obj.poll()
+
+- Memanggil poll() yang akan *memblokir* hingga ada minimal satu event terjadi
+- Mengembalikan list berisi (fd, event) dari semua socket yang aktif
+
+python
+for fd, event in events:
+
+- Iterasi setiap event yang terjadi
+
+python
+if event & (select.POLLHUP | select.POLLERR | select.POLLNVAL):
+    close_client(fd, poll_obj, fd_map, addr_map, server_fd)
+
+- Menangani kondisi error: koneksi putus (POLLHUP), error (POLLERR), atau fd tidak valid (POLLNVAL)
+
+python
+if fd == server_fd:
+    conn, addr = server.accept()
+
+- Jika event berasal dari server socket → ada client baru yang mencoba konek
+
+python
+if event & select.POLLIN:
+    sock = fd_map.get(fd)
+
+- Jika event dari client socket → ada data yang siap dibaca
+
+---
+
+### Penanganan Blocking Sementara
+python
+sock.setblocking(True)
+msg = recv_msg(sock)
+# ... proses command ...
+sock.setblocking(False)
+
+- Socket di-switch ke *blocking* saat membaca dan memproses command
+- Hal ini menyederhanakan logika framing (tidak perlu buffer per-client seperti select)
+- Setelah selesai, socket dikembalikan ke *non-blocking*
+
+> Pola ini disebut temporary blocking — praktis untuk implementasi sederhana, meski secara teknis menghentikan loop sejenak saat ada transfer besar.
+
+---
+
+### Koneksi Client Baru
+python
+conn.setblocking(True)
+send_msg(conn, b'Welcome to TCP File Server (poll)!')
+conn.setblocking(False)
+broadcast(fd_map, f'[Server] {addr} has joined.',
+          sender_fd=new_fd, server_fd=server_fd)
+
+- Welcome message dikirim dengan blocking sementara
+- Semua client lain dinotifikasi via broadcast bahwa ada client baru bergabung
+
+---
+
+### Fungsi close_client
+python
+def close_client(fd, poll_obj, fd_map, addr_map, server_fd):
+    broadcast(fd_map, f'[Server] {addr} has left.', ...)
+    poll_obj.unregister(fd)
+    sock = fd_map.pop(fd, None)
+    sock.close()
+    addr_map.pop(fd, None)
+
+- Unregister fd dari poll agar tidak dipantau lagi
+- Hapus dari fd_map dan addr_map
+- Broadcast notifikasi ke semua client bahwa seseorang disconnect
+
+---
+
+### Broadcast Upload & Download
+python
+def handle_upload(conn, filename, addr, fd_map, sender_fd, server_fd):
+    ...
+    broadcast(fd_map, f'[Server] {addr} uploaded "{filename}" ({len(file_data)} bytes).',
+              sender_fd=sender_fd, server_fd=server_fd)
+
+def handle_download(conn, filename, addr, fd_map, sender_fd, server_fd):
+    ...
+    broadcast(fd_map, f'[Server] {addr} downloaded "{filename}".',
+              sender_fd=sender_fd, server_fd=server_fd)
+
+- Setelah upload/download berhasil, semua client lain mendapat notifikasi
+- sender_fd dan server_fd dikecualikan dari broadcast
+
+---
+
+### Kelebihan
+- Multi-client tanpa thread
+- Tidak ada batasan jumlah fd (tidak seperti select yang terbatas 1024)
+- Lebih eksplisit dalam menangani event error (POLLHUP, POLLERR)
+
+### Kekurangan
+- poll() hanya tersedia di Unix/Linux (tidak tersedia di Windows)
+- Temporary blocking masih bisa memperlambat server saat ada transfer besar
+
+---
+
+## server_thread.py (Multi-threading Server)
+
+Server ini menggunakan *satu thread per client*, sehingga setiap client ditangani secara independen dan paralel.
+
+---
+
+### Inisialisasi
+python
+clients_lock = threading.Lock()
+clients: list[socket.socket] = []
+
+- clients → list semua socket client yang sedang terhubung
+- clients_lock → *mutex lock* untuk mencegah race condition saat mengakses clients dari banyak thread secara bersamaan
+
+---
+
+### Class ClientHandler
+python
+class ClientHandler(threading.Thread):
+    def __init__(self, conn: socket.socket, addr):
+        threading.Thread.__init__(self)
+        self.conn = conn
+        self.addr = addr
+        self.daemon = True
+
+- Setiap client direpresentasikan sebagai sebuah *thread* dengan class ClientHandler
+- daemon = True → thread akan otomatis mati saat main thread berhenti
+
+---
+
+### Method run()
+python
+def run(self):
+    with clients_lock:
+        clients.append(self.conn)
+    send_msg(self.conn, b'Welcome to TCP File Server (thread)!')
+    broadcast(f'[Server] {self.addr} has joined.', sender=self.conn)
+
+- Saat thread mulai, socket client ditambahkan ke list clients dengan lock
+- Welcome message dikirim ke client baru
+- Semua client lain dinotifikasi via broadcast
+
+python
+    try:
+        while True:
+            msg = recv_msg(self.conn)
+            if msg is None:
+                break
+            # proses command...
+    except (ConnectionResetError, BrokenPipeError, OSError):
+        pass
+    finally:
+        with clients_lock:
+            clients.remove(self.conn)
+        self.conn.close()
+        broadcast(f'[Server] {self.addr} has left.')
+
+- Loop terus membaca dan memproses command selama client terhubung
+- Exception ditangkap untuk koneksi yang terputus secara tiba-tiba
+- Blok finally memastikan cleanup selalu terjadi: client dihapus dari list, socket ditutup, dan client lain dinotifikasi
+
+---
+
+### Broadcast dengan Thread Safety
+python
+def broadcast(message: str, sender: socket.socket = None):
+    data = message.encode()
+    with clients_lock:
+        for c in list(clients):
+            if c is not sender:
+                try:
+                    send_msg(c, data)
+                except Exception:
+                    pass
+
+- clients_lock digunakan setiap kali mengakses list clients
+- list(clients) membuat salinan list agar iterasi tidak terganggu jika ada perubahan di tengah loop
+- Sender dikecualikan agar tidak menerima pesannya sendiri
+
+---
+
+### Broadcast Upload & Download
+python
+def handle_upload(conn, filename, addr, sender):
+    ...
+    broadcast(f'[Server] {addr} uploaded "{filename}" ({len(file_data)} bytes).', sender=sender)
+
+def handle_download(conn, filename, addr, sender):
+    ...
+    broadcast(f'[Server] {addr} downloaded "{filename}".', sender=sender)
+
+- Notifikasi broadcast dikirim setelah operasi file selesai
+- sender adalah socket client yang melakukan aksi, dikecualikan dari broadcast
+
+---
+
+### Class Server
+python
+class Server:
+    def open_socket(self):
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server.bind((self.host, self.port))
+        self.server.listen(5)
+
+    def run(self):
+        self.open_socket()
+        while True:
+            conn, addr = self.server.accept()
+            t = ClientHandler(conn, addr)
+            t.start()
+            self.threads.append(t)
+
+- Main thread hanya bertugas menerima koneksi baru (accept)
+- Setiap koneksi baru langsung dibuat thread ClientHandler dan dijalankan
+- Main thread langsung kembali menunggu koneksi berikutnya
+
+---
+
+### Kelebihan
+- Multi-client dengan logika yang mudah dipahami (tiap client punya thread sendiri)
+- Tidak perlu buffer per-client atau state machine
+- Operasi blocking (seperti recv_msg) aman karena tiap thread independen
+
+### Kekurangan
+- Membuat thread baru untuk setiap client → overhead memori dan CPU meningkat seiring jumlah client
+- Perlu sinkronisasi (lock) untuk data yang diakses bersama, rawan deadlock jika tidak hati-hati
+- Jumlah thread yang bisa dibuat terbatas oleh sistem operasi
+
+---
+
 ## client.py
 
 Client digunakan untuk berinteraksi dengan server.
@@ -397,6 +668,8 @@ while True:
 
 Kombinasi ini memastikan komunikasi aman, terstruktur, dan tidak terjadi data corruption
 ## Screenshot Hasil
+
+### server_sync.py
 
 ### server_select.py
 
