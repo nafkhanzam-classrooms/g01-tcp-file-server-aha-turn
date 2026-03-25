@@ -10,8 +10,12 @@
 ## Link Youtube (Unlisted)
 Link ditaruh di bawah ini
 ```
-
+https://youtu.be/cCX5LSRlSnM
 ```
+
+### Sebelumnya berikut bukti bahwa kami satu Teams
+<img width="178" height="118" alt="image" src="https://github.com/user-attachments/assets/25ce883e-be7d-43c0-8b92-ea46759621e7" />
+<img width="497" height="557" alt="image" src="https://github.com/user-attachments/assets/70ff8145-70b8-47cf-9fc3-5d60a9f7f03b" />
 
 ### Overview
 Program ini merupakan implementasi **TCP File Server** dengan dua pendekatan:
@@ -647,29 +651,31 @@ while True:
 
 ## Perbedaan Utama
 
-| Aspek        | server_sync | server_select  |
-|--------------|-------------|----------------|
-| Model        | Blocking    | Non-blocking   |
-| Client       | 1           | Banyak         |
-| Mekanisme    | Loop biasa  | select()       |
-| Upload       | Bergantian  | Bersamaan      |
-| Chat         | tidak bisa  | bisa           |
-| Kompleksitas | Sederhana   | Lebih kompleks |
+| Aspek        | server_sync | server_select  | server_poll | server_thread |
+|--------------|-------------|----------------|-------------|---------------|
+| Model        | Blocking    | Non-blocking   | non-blocking | blocking per-thread |
+| Client       | 1           | Banyak         | Banyak      | Banyak       |
+| Mekanisme    | Loop biasa  | select()       | poll()      | thread per koneksi |
+| Upload       | Bergantian  | Bersamaan      | Bersamaan   | Bersamaan    |
+| Chat         | tidak bisa  | bisa           | bisa        | bisa         |
+| Kompleksitas | Sederhana   | Lebih kompleks | Lebih kompleks | Sedikit lebih mudah |
 
 ---
 
 ## Kesimpulan
 
-- **server_sync** -> sederhana, cocok untuk belajar dasar  
-- **server_select** -> lebih powerful untuk multi-client  
-- Menggunakan:
-  - **length-prefix framing** -> untuk pesan
-  - **chunked transfer** -> untuk file  
+- server_sync: paling sederhana, cocok untuk memahami dasar framing + transfer.
+- server_select: cocok untuk multi-client, I/O multiplexing dengan `select`, ada chat/broadcast.
+- server_poll: mirror select tapi poll()-based, lebih scalable (Unix/Linux) tanpa limit fd.
+- server_thread: model per-client thread, implementasi intuitif tetapi overhead lebih tinggi.
 
-Kombinasi ini memastikan komunikasi aman, terstruktur, dan tidak terjadi data corruption
 ## Screenshot Hasil
 
 ### server_sync.py
+
+#### akan terjadi blocking ketika lebih dari sama dengan 2 client terhubung pada server_Sync
+
+<img width="1878" height="1196" alt="image" src="https://github.com/user-attachments/assets/f7e005a1-8020-40d0-838c-77795b7482c9" />
 
 ### server_select.py
 
@@ -688,3 +694,11 @@ Kombinasi ini memastikan komunikasi aman, terstruktur, dan tidak terjadi data co
 #### penggunaan fitur broadcast
 
 <img width="1901" height="512" alt="image" src="https://github.com/user-attachments/assets/9129dac3-61fd-458c-83cd-1835a50216ff" />
+
+### server_thread.py
+
+![WhatsApp Image 2026-03-25 at 22 28 33](https://github.com/user-attachments/assets/e34a7ede-4ea8-4edd-90a2-144b0849eeff)
+
+### server_poll.py
+
+![WhatsApp Image 2026-03-25 at 22 29 37](https://github.com/user-attachments/assets/8c988ee8-584a-447f-b891-40288d2753af)
