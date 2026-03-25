@@ -67,7 +67,6 @@ def recv_msg(sock):
 - Membaca 4 byte pertama (header)
 - Lalu membaca isi pesan sesuai panjang tersebut  
 - Mencegah data tercampur (karena TCP adalah stream)
-
 ---
 
 ### Handle Client
