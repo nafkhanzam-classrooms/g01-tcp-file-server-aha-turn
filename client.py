@@ -14,12 +14,10 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 is_transferring = threading.Event()
 
 def send_msg(sock, data):
-    """Method 5: Length Prefix / Header framing."""
     header = struct.pack(">I", len(data))
     sock.sendall(header + data)
 
 def recv_msg(sock):
-    """Receive a complete length-prefixed message (blocking)."""
     header = sock.recv(4)
     if not header or len(header) < 4:
         return None
@@ -33,7 +31,6 @@ def recv_msg(sock):
     return buf
 
 def upload_file(sock, filename):
-    """Send a file to the server using Method 6: Chunked Blocks framing."""
     if not os.path.exists(filename):
         print(f"[Client] File not found: {filename}")
         return
@@ -72,7 +69,6 @@ def upload_file(sock, filename):
         is_transferring.clear()
 
 def download_file(sock, filename):
-    """Receive a file from the server using Method 6: Chunked Blocks framing."""
     is_transferring.set()
     time.sleep(0.1)
     try:
@@ -116,11 +112,6 @@ def download_file(sock, filename):
         is_transferring.clear()
 
 def receive_loop(sock):
-    """
-    Background thread: terus-menerus terima pesan broadcast dari server.
-    Pause saat upload/download berlangsung.
-    Method 2: Target Function (dari lecture threading section).
-    """
     sock.settimeout(0.1)
     while True:
         try:
@@ -147,12 +138,12 @@ def main():
     try:
         sock.connect((HOST, PORT))
     except ConnectionRefusedError:
-        print(f"[Client] Tidak bisa konek ke {HOST}:{PORT}. Server sudah jalan?")
+        print(f"[Client] Cannot connect to {HOST}:{PORT}. Is the server running?")
         sys.exit(1)
 
-    print(f"[Client] Terhubung ke {HOST}:{PORT}")
+    print(f"[Client] Connected to {HOST}:{PORT}")
     print("[Client] Commands: /list  |  /upload <file>  |  /download <file>  |  /quit")
-    print("[Client] Teks biasa = broadcast chat ke semua client\n")
+    print("[Client] Any other text will be broadcast as a chat message.\n")
 
     sock.settimeout(5)
     welcome = recv_msg(sock)
