@@ -19,6 +19,8 @@ https://youtu.be/cCX5LSRlSnM
 
 <img width="497" height="557" alt="image" src="https://github.com/user-attachments/assets/70ff8145-70b8-47cf-9fc3-5d60a9f7f03b" />
 
+## Penjelasan Program
+
 ### Overview
 Program ini merupakan implementasi **TCP File Server** dengan dua pendekatan:
 - **server_sync.py** -> server synchronous (blocking, 1 client)
