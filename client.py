@@ -3,6 +3,7 @@ import struct
 import os
 import threading
 import sys
+import time
 
 HOST = '127.0.0.1'
 PORT = 5000
@@ -10,12 +11,12 @@ PORT = 5000
 DOWNLOAD_DIR = "client_downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
+is_transferring = threading.Event()
 
 def send_msg(sock, data):
     """Method 5: Length Prefix / Header framing."""
     header = struct.pack(">I", len(data))
     sock.sendall(header + data)
-
 
 def recv_msg(sock):
     """Receive a complete length-prefixed message (blocking)."""
@@ -31,97 +32,113 @@ def recv_msg(sock):
         buf += chunk
     return buf
 
-
 def upload_file(sock, filename):
-    """
-    Send a file to the server using Method 6: Chunked Blocks framing.
-    (stream file without knowing total size — from the lecture)
-    """
+    """Send a file to the server using Method 6: Chunked Blocks framing."""
     if not os.path.exists(filename):
         print(f"[Client] File not found: {filename}")
         return
 
-    send_msg(sock, f"/upload {os.path.basename(filename)}".encode())
+    is_transferring.set()
+    time.sleep(0.1)
+    try:
+        send_msg(sock, f"/upload {os.path.basename(filename)}".encode())
 
-    response = recv_msg(sock)
-    if not response:
-        print("[Client] No response from server.")
-        return
-    resp_text = response.decode(errors='replace')
-    if not resp_text.startswith("READY_UPLOAD"):
-        print(f"[Client] Unexpected response: {resp_text}")
-        return
+        response = recv_msg(sock)
+        if not response:
+            print("[Client] No response from server.")
+            return
+        resp_text = response.decode(errors='replace')
+        if not resp_text.startswith("READY_UPLOAD"):
+            print(f"[Client] Unexpected response: {resp_text}")
+            return
 
-    print(f"[Client] Uploading: {filename} ...")
+        print(f"[Client] Uploading: {filename} ...")
 
-    with open(filename, "rb") as f:
-        while True:
-            chunk = f.read(4096)
-            if not chunk:
-                break
-            sock.sendall(struct.pack(">I", len(chunk)) + chunk)
-    sock.sendall(struct.pack(">I", 0))
+        with open(filename, "rb") as f:
+            while True:
+                chunk = f.read(4096)
+                if not chunk:
+                    break
+                sock.sendall(struct.pack(">I", len(chunk)) + chunk)
+        sock.sendall(struct.pack(">I", 0))
 
-    result = recv_msg(sock)
-    if result:
-        print(f"[Client] {result.decode(errors='replace')}")
+        result = recv_msg(sock)
+        if result:
+            print(f"[Client] {result.decode(errors='replace')}")
 
+    except (ConnectionResetError, BrokenPipeError, OSError) as e:
+        print(f"[Client] Upload error: {e}")
+    finally:
+        is_transferring.clear()
 
 def download_file(sock, filename):
-    """
-    Receive a file from the server using Method 6: Chunked Blocks framing.
-    """
-    send_msg(sock, f"/download {filename}".encode())
+    """Receive a file from the server using Method 6: Chunked Blocks framing."""
+    is_transferring.set()
+    time.sleep(0.1)
+    try:
+        send_msg(sock, f"/download {filename}".encode())
 
-    response = recv_msg(sock)
-    if not response:
-        print("[Client] No response from server.")
-        return
-    resp_text = response.decode(errors='replace')
+        response = recv_msg(sock)
+        if not response:
+            print("[Client] No response from server.")
+            return
+        resp_text = response.decode(errors='replace')
 
-    if resp_text.startswith("ERROR"):
-        print(f"[Client] {resp_text}")
-        return
+        if resp_text.startswith("ERROR"):
+            print(f"[Client] {resp_text}")
+            return
 
-    if not resp_text.startswith("READY_DOWNLOAD"):
-        print(f"[Client] Unexpected response: {resp_text}")
-        return
+        if not resp_text.startswith("READY_DOWNLOAD"):
+            print(f"[Client] Unexpected response: {resp_text}")
+            return
 
-    print(f"[Client] Downloading: {filename} ...")
+        print(f"[Client] Downloading: {filename} ...")
 
-    save_path = os.path.join(DOWNLOAD_DIR, os.path.basename(filename))
-    with open(save_path, "wb") as f:
-        while True:
-            length_data = sock.recv(4)
-            if not length_data or len(length_data) < 4:
-                break
-            length = struct.unpack(">I", length_data)[0]
-            if length == 0:
-                break
-            buf = b""
-            while len(buf) < length:
-                buf += sock.recv(length - len(buf))
-            f.write(buf)
+        save_path = os.path.join(DOWNLOAD_DIR, os.path.basename(filename))
+        with open(save_path, "wb") as f:
+            while True:
+                length_data = sock.recv(4)
+                if not length_data or len(length_data) < 4:
+                    break
+                length = struct.unpack(">I", length_data)[0]
+                if length == 0:
+                    break
+                buf = b""
+                while len(buf) < length:
+                    buf += sock.recv(length - len(buf))
+                f.write(buf)
 
-    print(f"[Client] Saved to: {save_path}")
+        print(f"[Client] Saved to: {save_path}")
 
+    except (ConnectionResetError, BrokenPipeError, OSError) as e:
+        print(f"[Client] Download error: {e}")
+    finally:
+        is_transferring.clear()
 
 def receive_loop(sock):
     """
-    Background thread: continuously receive broadcast / server messages
-    and print them. Runs concurrently with the input loop.
-    Uses Method 2: Target Function (from lecture threading section).
+    Background thread: terus-menerus terima pesan broadcast dari server.
+    Pause saat upload/download berlangsung.
+    Method 2: Target Function (dari lecture threading section).
     """
+    sock.settimeout(0.1)
     while True:
         try:
+            if is_transferring.is_set():
+                continue
+
             data = recv_msg(sock)
             if data is None:
                 print("\n[Client] Disconnected from server.")
                 os._exit(0)
+
             text = data.decode(errors='replace')
             print(f"\n{text}")
             print(">> ", end='', flush=True)
-        except Exception:
+
+        except socket.timeout:
+            continue
+        except (ConnectionResetError, OSError):
             print("\n[Client] Connection error.")
             os._exit(0)
 
@@ -130,14 +147,16 @@ def main():
     try:
         sock.connect((HOST, PORT))
     except ConnectionRefusedError:
-        print(f"[Client] Cannot connect to {HOST}:{PORT}. Is the server running?")
+        print(f"[Client] Tidak bisa konek ke {HOST}:{PORT}. Server sudah jalan?")
         sys.exit(1)
 
-    print(f"[Client] Connected to {HOST}:{PORT}")
+    print(f"[Client] Terhubung ke {HOST}:{PORT}")
     print("[Client] Commands: /list  |  /upload <file>  |  /download <file>  |  /quit")
-    print("[Client] Any other text is broadcast as a chat message.\n")
+    print("[Client] Teks biasa = broadcast chat ke semua client\n")
 
+    sock.settimeout(5)
     welcome = recv_msg(sock)
+    sock.settimeout(None)
     if welcome:
         print(f"[Server] {welcome.decode(errors='replace')}")
 
