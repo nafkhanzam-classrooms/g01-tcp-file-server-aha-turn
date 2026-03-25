@@ -307,4 +307,111 @@ Ini yang bikin:
 - Lebih efisien
 ---
 
+## client.py
+
+Client digunakan untuk berinteraksi dengan server.
+
+---
+
+### Setup
+```python
+DOWNLOAD_DIR = "client_downloads"
+```
+- Folder untuk menyimpan file download  
+
+```python
+is_transferring = threading.Event()
+```
+- Digunakan untuk menandai apakah sedang upload/download  
+
+---
+
+### send_msg & recv_msg
+Sama seperti server (length-prefix framing)
+
+---
+
+### Upload File
+```python
+def upload_file(sock, filename):
+```
+
+Alur:
+1. Kirim `/upload`
+2. Tunggu `READY_UPLOAD`
+3. Kirim file per chunk
+4. Kirim 0 sebagai tanda selesai  
+
+---
+
+### Download File
+```python
+def download_file(sock, filename):
+```
+
+Alur:
+1. Kirim `/download`
+2. Terima file dalam chunk
+3. Simpan ke folder  
+
+---
+
+### Receive Loop (Thread)
+```python
+def receive_loop(sock):
+```
+- Thread terpisah untuk menerima pesan  
+- Supaya tidak bentrok dengan input user  
+
+---
+
+### Input User
+```python
+while True:
+    user_input = input(">> ")
+```
+- User bisa kirim command atau chat  
+
+---
+
+## Perbedaan Utama
+
+| Aspek        | server_sync | server_select  |
+|--------------|-------------|----------------|
+| Model        | Blocking    | Non-blocking   |
+| Client       | 1           | Banyak         |
+| Mekanisme    | Loop biasa  | select()       |
+| Upload       | Bergantian  | Bersamaan      |
+| Chat         | tidak bisa  | bisa           |
+| Kompleksitas | Sederhana   | Lebih kompleks |
+
+---
+
+## Kesimpulan
+
+- **server_sync** -> sederhana, cocok untuk belajar dasar  
+- **server_select** -> lebih powerful untuk multi-client  
+- Menggunakan:
+  - **length-prefix framing** -> untuk pesan
+  - **chunked transfer** -> untuk file  
+
+Kombinasi ini memastikan komunikasi aman, terstruktur, dan tidak terjadi data corruption
 ## Screenshot Hasil
+
+### server_select.py
+
+#### penggunaan `/list`, `/upload`, `/download`, serta `/quit`
+
+<img width="1912" height="1195" alt="image" src="https://github.com/user-attachments/assets/b41b1ad1-3fff-4acc-924b-c2fe3865b078" />
+
+<img width="1899" height="1174" alt="image" src="https://github.com/user-attachments/assets/0f433c29-0a28-497a-862e-8f4414634182" />
+
+#### hasil `/download` file `dump.txt` dan `FireFly.jpeg`
+
+<img width="1332" height="1138" alt="image" src="https://github.com/user-attachments/assets/5ceafde1-2e47-44ab-ac91-c015803c92a4" />
+
+<img width="1874" height="1113" alt="image" src="https://github.com/user-attachments/assets/2cafca6f-1d52-4224-8b9d-ac72f6fb2018" />
+
+#### penggunaan fitur broadcast
+
+<img width="1901" height="512" alt="image" src="https://github.com/user-attachments/assets/9129dac3-61fd-458c-83cd-1835a50216ff" />
