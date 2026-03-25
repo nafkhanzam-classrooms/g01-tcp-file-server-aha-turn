@@ -95,7 +95,7 @@ def send_msg(sock, data):
 Server ini menggunakan `select` sehingga dapat menangani **banyak klien sekaligus (concurrent)** tanpa blocking.
 
 #### Hal Utama
-- `select.select()` → memonitor banyak socket sekaligus
+- `select.select()` -> memonitor banyak socket sekaligus
 - Tidak perlu thread, cukup 1 loop utama
 
 ```python
